@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>六法トレーニング</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eceff4;--surface:#fff;--ink:#16213a;--sub:#5b6579;--line:#cdd3df;--accent:#2b4a8c;--accent-ink:#fff;--ok:#1f7a55;--ng:#b3322f;
+--ui:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",sans-serif;--law:"Noto Serif JP","Hiragino Mincho ProN","Yu Mincho",serif;color-scheme:light}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#10151f;--surface:#192030;--ink:#e6eaf3;--sub:#9aa5ba;--line:#2c3650;--accent:#8fabe8;--accent-ink:#10151f;--ok:#5fd0a0;--ng:#ff8b86;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--ui);padding:env(safe-area-inset-top,0) 0 0}
+header{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line)}
+h1{font:700 18px/1.2 var(--law);margin:0}
+select,input,button{font:inherit;color:inherit}
+select{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+main{max-width:680px;margin:0 auto;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0))}
+input[type=search]{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:8px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.meta{color:var(--sub);font-size:14px;margin:4px 0 8px}
+.art{padding:14px 0;border-top:1px solid var(--line)}
+.head{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.head b{font:700 20px/1.4 var(--law)}
+.head span{color:var(--sub);font-size:14px}
+.txt{font:400 17px/2 var(--law);white-space:pre-wrap;margin:6px 0 10px;max-width:38em}
+.btn{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 14px;cursor:pointer}
+.btn.main{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.ok{border-color:var(--ok);color:var(--ok)}
+.btn.ng{border-color:var(--ng);color:var(--ng)}
+.btn[disabled]{opacity:.5;cursor:default}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.row .btn{flex:1 1 120px}
+.q{font:400 18px/2.1 var(--law);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin:8px 0 14px}
+.blank{display:inline-block;min-width:4em;text-align:center;border-bottom:2px solid var(--accent);color:var(--accent);font-weight:700}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.choices .btn{font-family:var(--law);font-size:17px;padding:12px 8px}
+.result{margin-top:14px;font-weight:700}
+.result.ok{color:var(--ok)}.result.ng{color:var(--ng)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
+nav button{flex:1;background:none;border:0;padding:14px 4px;cursor:pointer;color:var(--sub)}
+nav button[aria-current=true]{color:var(--accent);font-weight:700;box-shadow:inset 0 3px 0 var(--accent)}
+.empty{color:var(--sub);padding:24px 0}
+footer{color:var(--sub);font-size:12px;margin-top:28px}
+</style>
+</head>
+<body>
+<header><h1>六法トレーニング</h1><select id="law" aria-label="法令を選ぶ"></select></header>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+const LAWS=[
+{id:'321CONSTITUTION',n:'憲法'},{id:'129AC0000000089',n:'民法'},{id:'140AC0000000045',n:'刑法'},
+{id:'132AC0000000048',n:'商法'},{id:'408AC0000000109',n:'民事訴訟法'},{id:'323AC0000000131',n:'刑事訴訟法'}];
+const API='https://laws.e-gov.go.jp/api/2/law_data/';
+const $=s=>document.querySelector(s);
+const h=(t,a={},...c)=>{const e=document.createElement(t);for(const k in a){k==='class'?e.className=a[k]:k.startsWith('on')?e.addEventListener(k.slice(2),a[k]):e.setAttribute(k,a[k])}c.flat().forEach(x=>e.append(x));return e};
+const app=$('#app');
+const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+let lawId=ls.get('roppo.law',LAWS[0].id), view=ls.get('roppo.view','browse'), cards=ls.get('roppo.cards',{});
+const lawName=id=>LAWS.find(l=>l.id===id).n;
+const saveCards=()=>{ls.set('roppo.cards',cards);drawNav()};
+
+/* ---- 条文データ(IndexedDBにキャッシュ) ---- */
+const idb=()=>new Promise((res,rej)=>{try{const r=indexedDB.open('roppo',1);r.onupgradeneeded=()=>r.result.createObjectStore('laws');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});
+const idbGet=async k=>{try{const d=await idb();return await new Promise(res=>{const q=d.transaction('laws').objectStore('laws').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(null)})}catch{return null}};
+const idbPut=async(k,v)=>{try{const d=await idb();d.transaction('laws','readwrite').objectStore('laws').put(v,k)}catch{}};
+const tx=n=>typeof n==='string'?n:n.tag==='Rt'?'':(n.children||[]).map(tx).join('');
+const find=(n,t)=>{if(typeof n==='string')return null;if(n.tag===t)return n;for(const c of n.children||[]){const r=find(c,t);if(r)return r}return null};
+const BLOCK=/^(Paragraph|Item|Subitem\d+)$/;
+function body(n,out){let line='';for(const k of n.children||[]){
+ if(typeof k==='string'){line+=k;continue}
+ if(BLOCK.test(k.tag)){if(line){out.push(line);line=''}body(k,out)}
+ else if(k.tag==='ParagraphNum'){const t=tx(k);if(t)line+=t+'　'}
+ else if(/Title$/.test(k.tag))line+=tx(k)+'　';
+ else line+=tx(k)}
+ if(line)out.push(line)}
+function collect(n,out){if(typeof n==='string')return;
+ if(n.tag==='Article'){const lines=[];for(const k of n.children||[])if(k.tag==='Paragraph')body(k,lines);
+  const cap=(find(n,'ArticleCaption')&&tx(find(n,'ArticleCaption')))||'';
+  out.push({num:String(n.attr&&n.attr.Num||''),title:tx(find(n,'ArticleTitle')||''),cap,text:lines.join('\n')});return}
+ (n.children||[]).forEach(c=>collect(c,out))}
+const memo={};
+async function loadLaw(id){
+ if(memo[id])return memo[id];
+ let arts=await idbGet(id);
+ if(!arts){const r=await fetch(API+id);if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();const main=find(j.law_full_text,'MainProvision');
+  if(!main)throw new Error('条文の形式を読み取れませんでした');
+  arts=[];collect(main,arts);if(!arts.length)throw new Error('条文が0件でした');idbPut(id,arts)}
+ return memo[id]=arts}
+async function need(id=lawId){
+ const st=h('p',{class:'meta'},'条文を読み込み中…');app.replaceChildren(st);
+ try{return await loadLaw(id)}catch(e){
+  app.replaceChildren(h('p',{class:'empty'},'条文を取得できませんでした。通信状況を確認して、もう一度試してください。('+e.message+')'),h('button',{class:'btn main',onclick:render},'再読み込み'));return null}}
+
+/* ---- 条文の閲覧・検索 ---- */
+async function vBrowse(){
+ const arts=await need();if(!arts)return;
+ const inp=h('input',{type:'search',placeholder:'条番号(709 / 709の2)かキーワード',autocomplete:'off',enterkeyhint:'search'});
+ const info=h('p',{class:'meta'}),list=h('div');
+ const run=()=>{
+  const q=inp.value.trim().replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-65248));
+  const m=q.match(/^第?(\d+)条?(?:の(\d+))?$/);let res;
+  if(m){const key=m[2]?m[1]+'_'+m[2]:m[1];res=arts.filter(a=>a.num===key||(!m[2]&&a.num.startsWith(m[1]+'_')))}
+  else if(q){const t=q.split(/\s+/);res=arts.filter(a=>t.every(w=>(a.cap+a.text).includes(w)))}
+  else res=arts.slice(0,10);
+  info.textContent=q?`${lawName(lawId)}:${res.length}件${res.length>30?'(先頭30件を表示)':''}`:`${lawName(lawId)}:全${arts.length}条(先頭10条を表示)`;
+  list.replaceChildren(...res.slice(0,30).map(a=>{
+   const k=lawId+':'+a.num;const b=h('button',{class:'btn'},cards[k]?'暗記カードに追加済み':'暗記カードに追加');
+   if(cards[k])b.disabled=true;
+   b.onclick=()=>{cards[k]={law:lawId,num:a.num,streak:0};saveCards();b.textContent='暗記カードに追加済み';b.disabled=true};
+   return h('article',{class:'art'},h('div',{class:'head'},h('b',{},a.title),h('span',{},a.cap)),h('p',{class:'txt'},a.text),b)}));
+  if(!res.length)list.append(h('p',{class:'empty'},'見つかりませんでした。キーワードを変えるか、条番号で検索してください。'))};
+ inp.addEventListener('input',run);app.replaceChildren(inp,info,list,source());run()}
+
+/* ---- 暗記カード ---- */
+let cardPos=0;
+async function vCards(){
+ const keys=Object.keys(cards);
+ if(!keys.length){app.replaceChildren(h('p',{class:'empty'},'間違えた条文や、条文画面で追加した条文がここに並びます。'),source());return}
+ if(cardPos>=keys.length)cardPos=0;
+ const k=keys[cardPos],c=cards[k];
+ const arts=await need(c.law);if(!arts)return;
+ const a=arts.find(x=>x.num===c.num);
+ if(!a){delete cards[k];saveCards();return vCards()}
+ const txt=h('p',{class:'txt',hidden:''},a.text);
+ const reveal=h('button',{class:'btn main'},'条文を見る');
+ const judge=h('div',{class:'row',hidden:''});
+ const next=()=>{render()};
+ judge.append(
+  h('button',{class:'btn ok',onclick:()=>{c.streak++;if(c.streak>=2)delete cards[k];else cardPos++;saveCards();next()}},'言えた'),
+  h('button',{class:'btn ng',onclick:()=>{c.streak=0;cardPos++;saveCards();next()}},'まだ'));
+ reveal.onclick=()=>{txt.hidden=false;judge.hidden=false;reveal.hidden=true};
+ app.replaceChildren(
+  h('p',{class:'meta'},`残り${keys.length}枚(2回続けて言えると卒業)`),
+  h('div',{class:'q'},h('div',{class:'head'},h('b',{},lawName(c.law)+' '+a.title),h('span',{},a.cap||'')),h('p',{class:'meta'},'この条文の内容を思い出してから開きましょう。'),txt),
+  reveal,judge,
+  h('div',{class:'row'},h('button',{class:'btn',onclick:()=>{delete cards[k];saveCards();render()}},'このカードを外す')),source())}
+
+/* ---- 穴埋めクイズ ---- */
+const KANJI=/[一-龥]{2,6}/g,NUMERAL=/^[一二三四五六七八九十百千万]+$/;
+const words=t=>(t.match(KANJI)||[]).filter(w=>!NUMERAL.test(w));
+async function vQuiz(){
+ const arts=await need();if(!arts)return;
+ const pool=arts.filter(a=>a.text.length>=25&&a.text.length<=170&&words(a.text).length>=2);
+ if(!pool.length){app.replaceChildren(h('p',{class:'empty'},'この法令では出題できる条文が見つかりませんでした。'));return}
+ const a=pool[Math.floor(Math.random()*pool.length)],ws=words(a.text);
+ const ans=ws[Math.floor(Math.random()*ws.length)];
+ const opts=new Set([ans]);let guard=0;
+ while(opts.size<4&&guard++<200){const o=words(pool[Math.floor(Math.random()*pool.length)].text);if(o.length)opts.add(o[Math.floor(Math.random()*o.length)])}
+ const choices=[...opts].sort(()=>Math.random()-.5);
+ const idx=a.text.indexOf(ans),blank=h('span',{class:'blank'},'　?　');
+ const q=h('div',{class:'q'},a.text.slice(0,idx),blank,a.text.slice(idx+ans.length));
+ q.style.whiteSpace='pre-wrap';
+ const out=h('div'),grid=h('div',{class:'choices'});
+ choices.forEach(c=>grid.append(h('button',{class:'btn',onclick:()=>{
+  grid.querySelectorAll('button').forEach(b=>b.disabled=true);
+  const ok=c===ans;blank.textContent=ans;
+  if(!ok){const k=lawId+':'+a.num;if(!cards[k]){cards[k]={law:lawId,num:a.num,streak:0};saveCards()}}
+  out.replaceChildren(h('p',{class:`result ${ok?'ok':'ng'}`},ok?'正解':`不正解。正解は「${ans}」`+'(暗記カードに追加しました)'),
+   h('p',{class:'meta'},`${lawName(lawId)} ${a.title} ${a.cap||''}`),
+   h('div',{class:'row'},h('button',{class:'btn main',onclick:render},'次の問題')))}},c)));
+ app.replaceChildren(h('p',{class:'meta'},`${lawName(lawId)}:空欄に入る語を選んでください`),q,grid,out,source())}
+
+/* ---- 通読(最初から順に読む・続きから再開) ---- */
+const PAGE=10;
+async function vRead(){
+ const arts=await need();if(!arts)return;
+ const pk='roppo.pos.'+lawId;let pos=Math.max(0,Math.min(ls.get(pk,0),arts.length-1));
+ const info=h('p',{class:'meta'}),wrap=h('div');
+ const artEl=a=>{const k=lawId+':'+a.num;const b=h('button',{class:'btn'},cards[k]?'暗記カードに追加済み':'暗記カードに追加');b.disabled=!!cards[k];
+  b.onclick=()=>{cards[k]={law:lawId,num:a.num,streak:0};saveCards();b.textContent='暗記カードに追加済み';b.disabled=true};
+  return h('article',{class:'art'},h('div',{class:'head'},h('b',{},a.title),h('span',{},a.cap)),h('p',{class:'txt'},a.text),b)};
+ const go=p=>{pos=Math.max(0,Math.min(p,arts.length-1));ls.set(pk,pos);draw();window.scrollTo(0,0)};
+ const bar=end=>{const p=h('button',{class:'btn',onclick:()=>go(pos-PAGE)},'前の10条'),n=h('button',{class:'btn main',onclick:()=>go(pos+PAGE)},'次の10条');p.disabled=pos===0;n.disabled=end>=arts.length;return h('div',{class:'row'},p,n)};
+ function draw(){const end=Math.min(pos+PAGE,arts.length);
+  info.textContent=`${lawName(lawId)}:${arts[pos].title}〜${arts[end-1].title}(${end}/${arts.length}条)`;
+  wrap.replaceChildren(bar(end),...arts.slice(pos,end).map(artEl),bar(end))}
+ const jump=h('input',{type:'search',placeholder:'条番号へ移動(例:709)して Enter',enterkeyhint:'go',autocomplete:'off'});
+ jump.addEventListener('keydown',e=>{if(e.key!=='Enter')return;
+  const q=jump.value.trim().replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-65248));
+  const m=q.match(/^第?(\d+)条?(?:の(\d+))?$/);const i=m?arts.findIndex(a=>a.num===(m[2]?m[1]+'_'+m[2]:m[1])):-1;
+  if(i<0){info.textContent='その条番号は見つかりません。例:709 / 709の2';return}
+  jump.value='';go(i)});
+ app.replaceChildren(jump,info,wrap,source());draw()}
+
+const source=()=>h('footer',{},'条文データ:e-Gov法令検索(デジタル庁)。学習用で、最新の正式な条文は e-Gov で確認してください。');
+const VIEWS={browse:['検索',vBrowse],read:['通読',vRead],cards:['暗記カード',vCards],quiz:['穴埋め',vQuiz]};
+function drawNav(){$('#nav').replaceChildren(...Object.entries(VIEWS).map(([k,[n]])=>h('button',{'aria-current':String(k===view),onclick:()=>{view=k;ls.set('roppo.view',k);render()}},k==='cards'?`${n}(${Object.keys(cards).length})`:n)))}
+function render(){drawNav();VIEWS[view][1]();window.scrollTo(0,0)}
+$('#law').append(...LAWS.map(l=>h('option',{value:l.id},l.n)));
+$('#law').value=lawId;
+$('#law').onchange=e=>{lawId=e.target.value;ls.set('roppo.law',lawId);render()};
+render();
+</script>
+</body>
+</html>
